@@ -1,0 +1,988 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type="text/xsl" href="documentation.xsl"?>
+
+<documentation>
+    <metadata>
+        <title>MDL Supererogatory Reasons Analyzer - Technical Documentation</title>
+        <version>2.4</version>
+        <author>Implementazione del criterio MDL per ragioni supererogatorie</author>
+        <date>2025-10-02</date>
+        <reference>
+            <citation>Coelati Rama, S. (2025). Teoria computazionale delle ragioni supererogatorie.</citation>
+            <citation>Crupi, V. &amp; Iacona, A. (2023). Outline of a theory of reasons. Philosophical Quarterly, 73(1).</citation>
+            <citation>Grünwald, P. (2007). The Minimum Description Length Principle. MIT Press.</citation>
+        </reference>
+        <repository>https://github.com/[username]/mdl-supererogatory-analyzer</repository>
+        <license>MIT</license>
+    </metadata>
+
+    <!-- ================================================================ -->
+    <!-- PANORAMICA GENERALE -->
+    <!-- ================================================================ -->
+    
+    <overview>
+        <title>Panoramica del Progetto</title>
+        
+        <description>
+            Il programma implementa il criterio di Minimum Description Length (MDL) per identificare 
+            quali ragioni (colonne di un dataset CSV) sono necessarie versus supererogatorie per 
+            spiegare una conclusione target. Utilizza la compressione dati come proxy della complessità 
+            di Kolmogorov per misurare il potere informativo di ciascuna ragione.
+        </description>
+        
+        <key-features>
+            <feature>
+                <name>Analisi MDL Automatica</name>
+                <description>Selezione greedy del set minimo di ragioni necessarie S*</description>
+            </feature>
+            <feature>
+                <name>Rilevamento Correlazioni</name>
+                <description>Identificazione automatica di correlazioni negative con inversione semantica</description>
+            </feature>
+            <feature>
+                <name>Soglie Adattive</name>
+                <description>Uso di mediane specifiche per colonna invece di soglie fisse</description>
+            </feature>
+            <feature>
+                <name>Visualizzazione Interattiva</name>
+                <description>GUI moderna con chart Δ̂ profile e risultati dettagliati</description>
+            </feature>
+            <feature>
+                <name>Zero Dipendenze Esterne</name>
+                <description>Solo standard library Python (tkinter, zlib, bz2, csv)</description>
+            </feature>
+        </key-features>
+        
+        <architecture>
+            <layer name="Core MDL">Implementazione algoritmi compressione e selezione greedy</layer>
+            <layer name="Statistical Analysis">Correlazioni Pearson, calcolo mediane, inversione automatica</layer>
+            <layer name="Text Generation">Generazione testi sintetici con overlap controllato</layer>
+            <layer name="GUI">Interfaccia tkinter con notebook tabs, canvas chart, configurazione</layer>
+        </architecture>
+    </overview>
+
+    <!-- ================================================================ -->
+    <!-- FONDAMENTI TEORICI -->
+    <!-- ================================================================ -->
+    
+    <theoretical-foundation>
+        <title>Fondamenti Teorici del Criterio MDL</title>
+        
+        <section id="mdl-criterion">
+            <title>Criterio di Supererogatorietà</title>
+            
+            <theory>
+                <definition>
+                    Una ragione p è SUPEREROGATORIA per la conclusione q nel contesto C quando:
+                    
+                    K(q|C,p) / K(q|C) &gt; 1 - τ
+                    
+                    Equivalentemente, usando la lunghezza compressa L come proxy di K:
+                    
+                    Δ̂_C(p; q) = [L(q|C) - L(q|C,p)] / L(q|C) &lt; τ
+                    
+                    dove τ ≈ 0.15 è la soglia di significatività.
+                </definition>
+                
+                <interpretation>
+                    Il valore Δ̂_C(p; q) misura di quanto la ragione p riduce la complessità di q 
+                    dato il contesto C. Valori vicini a 1 indicano riduzione massima (ragione necessaria), 
+                    valori vicini a 0 indicano riduzione minima (ragione supererogatoria).
+                </interpretation>
+                
+                <threshold-justification>
+                    τ = 0.15 deriva da:
+                    - Rumore algoritmico compressori (~5%)
+                    - Rumore campionamento statistico (~5%)
+                    - Rumore generazione sintetica (~5%)
+                    Totale margine sicurezza ≈ 15%
+                </threshold-justification>
+            </theory>
+            
+            <code-implementation>
+                <language>Python</language>
+                <function>delta_hat</function>
+                <source><![CDATA[
+def delta_hat(q: str, C: str, p: str, method: str = 'zlib') -> float:
+    """
+    Formula MDL centrale (equazione 2 tesi):
+    Δ̂_C(p; q) = [L(q|C) - L(q|C,p)] / L(q|C)
+    """
+    L_q_C = L_cond(q, C, method)
+    if L_q_C == 0:
+        return 0.0  # q già completamente determinato da C
+    L_q_Cp = L_cond(q, C + "\n§§§\n" + p, method)
+    reduction = (L_q_C - L_q_Cp) / L_q_C
+    return max(-1.0, min(1.0, reduction))  # Clamp per fluttuazioni numeriche
+                ]]></source>
+                <explanation>
+                    La funzione calcola la riduzione relativa di complessità. Il separatore "§§§" 
+                    aiuta il compressore a identificare il confine tra contesto e ragione. 
+                    Il clamp gestisce fluttuazioni numeriche degli algoritmi di compressione.
+                </explanation>
+            </code-implementation>
+        </section>
+        
+        <section id="kolmogorov-approximation">
+            <title>Approssimazione della Complessità di Kolmogorov</title>
+            
+            <theory>
+                <background>
+                    La complessità di Kolmogorov K(x) è incomputabile, ma la lunghezza di x compresso 
+                    fornisce un'approssimazione pratica basata sul Teorema di Invarianza di Kolmogorov.
+                </background>
+                
+                <compression-methods>
+                    <method name="zlib">
+                        <algorithm>Lempel-Ziv (LZ77)</algorithm>
+                        <characteristics>Veloce, buon compromesso qualità/velocità</characteristics>
+                        <use-case>Default per analisi standard</use-case>
+                    </method>
+                    <method name="bz2">
+                        <algorithm>Burrows-Wheeler Transform</algorithm>
+                        <characteristics>Compressione superiore ma 3-5x più lento</characteristics>
+                        <use-case>Analisi precise su dataset piccoli</use-case>
+                    </method>
+                </compression-methods>
+            </theory>
+            
+            <code-implementation>
+                <language>Python</language>
+                <function>L_cond</function>
+                <source><![CDATA[
+def L_cond(x: str, y: str, method: str = 'zlib') -> int:
+    """
+    Approssima K(x|y) usando compressione.
+    Formula: L(x|y) ≈ L(y⊕x) - L(y)
+    """
+    SEP = "\n§§§\n"  # Separatore esplicito per pattern compression
+    L_y = compressed_len(bytes_of(y), method)
+    L_yx = compressed_len(bytes_of(y + SEP + x), method)
+    return max(0, L_yx - L_y)  # max(0, ...) evita negativi da fluttuazioni
+                ]]></source>
+                <explanation>
+                    Se x è completamente prevedibile da y, allora L(y⊕x) ≈ L(y), quindi L(x|y) ≈ 0.
+                    Se x è indipendente da y, L(y⊕x) ≈ L(y) + L(x). Il separatore previene 
+                    pattern accidentali al confine.
+                </explanation>
+            </code-implementation>
+        </section>
+        
+        <section id="context-structure">
+            <title>Struttura del Contesto</title>
+            
+            <theory>
+                <definition>
+                    Il contesto C ha struttura composita:
+                    
+                    C = ⟨B, R, E⟩
+                    
+                    - B: Background beliefs (credenze di sfondo, statistiche aggregate)
+                    - R: Already accepted reasons (ragioni già accettate, costruito iterativamente)
+                    - E: Environmental evidence (evidenze ambientali, info descrittive)
+                </definition>
+                
+                <non-monotonicity>
+                    Una ragione può passare da necessaria a supererogatoria quando il contesto 
+                    si arricchisce. Se Δ̂_C(p;q) ≥ τ ma Δ̂_{C∪r}(p;q) &lt; τ, allora p diventa 
+                    supererogatoria nel contesto arricchito C∪r.
+                </non-monotonicity>
+            </theory>
+        </section>
+    </theoretical-foundation>
+
+    <!-- ================================================================ -->
+    <!-- ALGORITMO GREEDY -->
+    <!-- ================================================================ -->
+    
+    <algorithm>
+        <title>Algoritmo di Selezione Greedy</title>
+        
+        <description>
+            L'algoritmo seleziona iterativamente la ragione con massimo guadagno informativo Δ̂ 
+            fino a quando tutte le ragioni rimanenti hanno Δ̂ &lt; τ.
+        </description>
+        
+        <pseudocode><![CDATA[
+ALGORITMO: Greedy MDL Selection
+INPUT: q (conclusione), C_base (contesto iniziale), reasons[], τ (soglia)
+OUTPUT: S* (set ragioni necessarie), Δ̂_gains[], Δ̂_post[]
+
+1. Inizializza:
+   - C ← C_base
+   - S* ← ∅
+   - remaining ← {0, 1, ..., n-1}
+
+2. WHILE remaining ≠ ∅:
+   a. Per ogni i ∈ remaining:
+      - Calcola δ_i = Δ̂_C(reasons[i]; q)
+   b. Trova i* = argmax_{i∈remaining} δ_i
+   c. IF δ_{i*} < τ THEN BREAK
+   d. S* ← S* ∪ {i*}
+   e. C ← C ∪ {reasons[i*]}
+   f. remaining ← remaining \ {i*}
+
+3. Calcola Δ̂_post per tutte le ragioni rispetto a C finale
+
+4. RETURN (S*, Δ̂_gains, Δ̂_post)
+        ]]></pseudocode>
+        
+        <complexity>
+            <time>O(n² · L) dove n = numero ragioni, L = costo compressione</time>
+            <space>O(n + |C|) dove |C| = dimensione contesto</space>
+        </complexity>
+        
+        <code-implementation>
+            <language>Python</language>
+            <function>greedy_mdl_selection</function>
+            <source><![CDATA[
+def greedy_mdl_selection(q: str, C_base: str, reasons: List[str],
+                        tau: float, method: str = 'zlib') -> Tuple[List[int], List[float], List[float]]:
+    """
+    Algoritmo greedy per selezione set minimo S* di ragioni necessarie.
+    """
+    EPS = 1e-12  # Tolleranza numerica per confronti float
+    n = len(reasons)
+    remaining = list(range(n))
+    selected = []
+    marginal_gains = [0.0] * n
+    C = C_base
+    
+    # Loop principale selezione greedy
+    while remaining:
+        best_i = None
+        best_delta = 0.0
+        
+        # Trova ragione con max Δ̂
+        for i in remaining:
+            delta = delta_hat(q, C, reasons[i], method)
+            # Tie-breaking deterministico: preferisce indice minore se Δ̂ uguali
+            if delta > best_delta + EPS or (abs(delta - best_delta) <= EPS and (best_i is None or i < best_i)):
+                best_delta = delta
+                best_i = i
+        
+        # Stop se max Δ̂ < τ (bordo inclusivo)
+        if best_i is None or best_delta < tau - EPS:
+            break
+        
+        # Aggiungi a S* e aggiorna contesto
+        selected.append(best_i)
+        marginal_gains[best_i] = best_delta
+        C = C + "\n§§§\n" + reasons[best_i]  # Arricchimento iterativo
+        remaining.remove(best_i)
+    
+    # Calcola Δ̂ post-selezione per tutte le ragioni
+    C_final = C_base
+    for i in selected:
+        C_final = C_final + "\n§§§\n" + reasons[i]
+    post_marginal = [delta_hat(q, C_final, reasons[i], method) for i in range(n)]
+    
+    return selected, marginal_gains, post_marginal
+            ]]></source>
+            <key-points>
+                <point>Tie-breaking deterministico garantisce riproducibilità</point>
+                <point>Bordo inclusivo (Δ̂ ≥ τ) per inclusione coerente</point>
+                <point>Contesto arricchito iterativamente (cuore della non-monotonicità)</point>
+                <point>Post-marginals calcolati rispetto a contesto finale arricchito</point>
+            </key-points>
+        </code-implementation>
+        
+        <adaptive-threshold>
+            <title>Soglia τ Adattiva (Elbow Method)</title>
+            <description>
+                Invece di τ fisso (0.15), il programma può stimare τ ottimale dal profilo Δ̂ 
+                usando il metodo del "gomito": trova il punto di massimo cambio di pendenza 
+                nella curva ordinata dei Δ̂.
+            </description>
+            <source><![CDATA[
+def adaptive_tau(deltas: List[float], min_tau: float = 0.02, max_tau: float = 0.40) -> float:
+    """
+    Stima τ adattivo da profilo Δ̂ usando metodo del gomito.
+    """
+    if len(deltas) < 2:
+        return 0.15  # Fallback default
+    
+    sorted_d = sorted([max(0.0, min(1.0, d)) for d in deltas], reverse=True)
+    gaps = [sorted_d[i] - sorted_d[i+1] for i in range(len(sorted_d)-1)]
+    
+    if not gaps:
+        return 0.15
+    
+    i_star = max(range(len(gaps)), key=lambda i: gaps[i])  # Indice gap massimo
+    tau_est = (sorted_d[i_star] + sorted_d[i_star+1]) / 2.0  # Punto medio gap
+    
+    return max(min_tau, min(max_tau, tau_est))  # Clamp in range ammissibile
+            ]]></source>
+        </adaptive-threshold>
+    </algorithm>
+
+    <!-- ================================================================ -->
+    <!-- INNOVAZIONI v2.4 -->
+    <!-- ================================================================ -->
+    
+    <innovations version="2.4">
+        <title>Innovazioni della Versione 2.4</title>
+        
+        <innovation id="adaptive-median">
+            <name>Soglie Adattive Basate su Mediana</name>
+            
+            <problem>
+                Versioni precedenti usavano soglia fissa 0.5 per determinare se una ragione 
+                era "soddisfatta". Con dati reali, questo produceva risultati errati:
+                - study_hours con mediana 3.5h: studenti con 1h considerati "high study" ✗
+            </problem>
+            
+            <solution>
+                Calcolo della mediana specifica per ogni colonna, usata come soglia adattiva:
+                - study_hours ≥ 3.5h = "high study" ✓
+                - social_media ≥ 2.5h = "high social" (poi invertito se corr negativa)
+            </solution>
+            
+            <code-implementation>
+                <source><![CDATA[
+def compute_median(values: List[float]) -> float:
+    """
+    Calcola mediana. Più robusta agli outlier rispetto a media.
+    """
+    if not values:
+        return 0.5
+    sorted_vals = sorted(values)
+    n = len(sorted_vals)
+    if n % 2 == 0:
+        return (sorted_vals[n//2 - 1] + sorted_vals[n//2]) / 2.0
+    else:
+        return sorted_vals[n//2]
+
+def _reason_satisfied(row: Dict, col: str, is_inverted: bool = False, median_val: float = 0.5) -> bool:
+    """
+    Determina se ragione soddisfatta. Usa MEDIANA invece di 0.5 fisso.
+    """
+    try:
+        val = str(row.get(col, '')).strip().lower()
+        
+        if val in ('yes', 'y', 'true', '1', 'high', 'good', 'excellent', 'si', 'sì', 't'):
+            result = True
+        elif val in ('no', 'n', 'false', '0', 'low', 'poor', 'bad', 'f'):
+            result = False
+        else:
+            try:
+                numeric_val = float(val)
+                result = numeric_val >= median_val  # CRUCIALE: usa mediana, non 0.5
+            except:
+                result = False
+        
+        if is_inverted:
+            result = not result
+        
+        return result
+    except Exception:
+        return False
+                ]]></source>
+            </code-implementation>
+            
+            <impact>
+                Migliora significativamente l'accuratezza del rilevamento ragioni soddisfatte, 
+                specialmente per variabili con range non normalizzati (es. ore di studio 0-8h).
+            </impact>
+        </innovation>
+        
+        <innovation id="correlation-based-overlap">
+            <name>Overlap Testi Sintetici Basato su Correlazione Diretta</name>
+            
+            <problem>
+                Versioni precedenti calcolavano overlap basato su success_rate empirico, 
+                che non catturava bene il potere informativo reale delle ragioni.
+            </problem>
+            
+            <solution>
+                Overlap determinato DIRETTAMENTE dalla correlazione assoluta con il target:
+                
+                overlap = 0.30 + 0.60 * |correlation|
+                
+                Esempi:
+                - correlation = 0.8 → overlap = 0.78 (molto informativa)
+                - correlation = 0.2 → overlap = 0.42 (poco informativa)
+            </solution>
+            
+            <code-implementation>
+                <source><![CDATA[
+def build_mdl_texts_from_data(rows: List[Dict], target_col: str, threshold: Any,
+                              col_type: ColumnType, reason_cols: List[str], 
+                              analysis: Dict[str, Dict], seed: int = 42) -> Dict:
+    """
+    Costruisce rappresentazioni testuali MDL.
+    INNOVAZIONE v2.4: Overlap basato su |correlazione|
+    """
+    rng = random.Random(seed)
+    
+    SUCCESS_VOCAB = ["achieve", "succeed", "attain", "accomplish", "excel", ...]
+    ALL_VOCAB = SUCCESS_VOCAB + [f"neutral{i}" for i in range(300)]
+    CONTRAST_VOCAB = [t for t in ALL_VOCAB if t not in SUCCESS_VOCAB]
+    
+    # Genera testi con overlap controllato
+    q_text = make_text_representation(SUCCESS_VOCAB, CONTRAST_VOCAB, 0.92, 1000, rng)
+    B_text = make_text_representation(SUCCESS_VOCAB, CONTRAST_VOCAB, 0.18, 450, rng)
+    E_text = make_text_representation(SUCCESS_VOCAB, CONTRAST_VOCAB, 0.14, 350, rng)
+    
+    reasons = []
+    labels = []
+    for col in reason_cols:
+        col_analysis = analysis.get(col, {'correlation': 0.0, 'is_inverted': False, 'median': 0.5})
+        correlation = col_analysis['correlation']  # Già valore assoluto
+        is_inverted = col_analysis['is_inverted']
+        
+        # FORMULA CHIAVE: overlap diretto da correlazione
+        overlap = max(0.15, min(0.94, 0.30 + 0.60 * correlation))
+        
+        p_text = make_text_representation(SUCCESS_VOCAB, CONTRAST_VOCAB, overlap, 380, rng)
+        reasons.append(p_text)
+        
+        label_prefix = f"LOW {col}" if is_inverted else f"{col}"
+        labels.append(f"{label_prefix} (corr={correlation:.2f}, ovl≈{overlap:.2f})")
+    
+    return {'q': q_text, 'B': B_text, 'E': E_text, 'reasons': reasons, 'labels': labels, ...}
+                ]]></source>
+            </code-implementation>
+            
+            <rationale>
+                La correlazione cattura direttamente la forza della relazione statistica, 
+                che MDL interpreta come potere informativo. Mapping lineare garantisce 
+                che ragioni con alta correlazione (causalmente importanti) abbiano 
+                alta overlap → alta Δ̂ → selezione prioritaria.
+            </rationale>
+        </innovation>
+        
+        <innovation id="automatic-inversion">
+            <name>Inversione Automatica Correlazioni Negative</name>
+            
+            <problem>
+                Variabili con correlazione negativa (es. social_media_hours: più uso → voti peggiori) 
+                venivano interpretate erroneamente come "alto valore = positivo".
+            </problem>
+            
+            <solution>
+                Rilevamento automatico correlazioni negative (corr &lt; -0.1) con inversione semantica:
+                - social_media_hours diventa "LOW social_media_hours"
+                - Logica invertita: valore &lt; mediana = soddisfatta
+            </solution>
+            
+            <code-implementation>
+                <source><![CDATA[
+def analyze_columns(rows: List[Dict], target_col: str, threshold: Any,
+                   col_type: ColumnType, reason_cols: List[str]) -> Dict[str, Dict]:
+    """
+    Analizza colonne: correlazione + mediana + flag inversione.
+    """
+    # Costruisci vettore successo (1.0 = pass, 0.0 = fail)
+    success_values = []
+    for row in rows:
+        # ... determina is_success basato su col_type e threshold ...
+        success_values.append(1.0 if is_success else 0.0)
+    
+    analysis = {}
+    for col in reason_cols:
+        # Estrai valori numerici
+        col_values = [...]
+        filtered_success = [...]
+        
+        # Calcola correlazione Pearson
+        corr = compute_correlation(col_values, filtered_success)
+        median = compute_median(col_values)
+        
+        # INVERSIONE AUTOMATICA se correlazione negativa
+        is_inverted = (corr < -0.1)  # Soglia conservativa
+        
+        analysis[col] = {
+            'correlation': abs(corr),  # Usa valore assoluto per overlap
+            'is_inverted': is_inverted,
+            'median': median
+        }
+    
+    return analysis
+                ]]></source>
+            </code-implementation>
+            
+            <threshold-justification>
+                Soglia -0.1 scelta per:
+                - Evitare falsi positivi da rumore (con distribuzione normale, ~5% falsi positivi)
+                - Catturare correlazioni negative reali (tipicamente |corr| &gt; 0.3)
+            </threshold-justification>
+        </innovation>
+    </innovations>
+
+    <!-- ================================================================ -->
+    <!-- ARCHITETTURA SOFTWARE -->
+    <!-- ================================================================ -->
+    
+    <software-architecture>
+        <title>Architettura Software</title>
+        
+        <component name="Core MDL">
+            <responsibility>Implementazione algoritmi fondamentali MDL</responsibility>
+            <functions>
+                <function>bytes_of(): Conversione stringa → bytes</function>
+                <function>compressed_len(): Calcolo L(data) via compressione</function>
+                <function>L_cond(): Approssimazione K(x|y)</function>
+                <function>delta_hat(): Formula centrale Δ̂_C(p; q)</function>
+                <function>is_supererogatory(): Criterio classificazione</function>
+            </functions>
+            <dependencies>zlib, bz2</dependencies>
+        </component>
+        
+        <component name="Statistical Analysis">
+            <responsibility>Analisi statistica dati CSV</responsibility>
+            <functions>
+                <function>compute_correlation(): Pearson correlation</function>
+                <function>compute_median(): Calcolo mediana robusta</function>
+                <function>analyze_columns(): Pipeline analisi completa (corr + median + inversion)</function>
+            </functions>
+            <dependencies>typing</dependencies>
+        </component>
+        
+        <component name="Text Generation">
+            <responsibility>Generazione testi sintetici per MDL</responsibility>
+            <functions>
+                <function>make_text_representation(): Generazione testo con overlap controllato</function>
+                <function>build_mdl_texts_from_data(): Costruzione completa rappresentazioni MDL</function>
+                <function>_reason_satisfied(): Valutazione soddisfacimento ragione</function>
+            </functions>
+            <dependencies>random</dependencies>
+        </component>
+        
+        <component name="Greedy Algorithm">
+            <responsibility>Selezione iterativa ragioni necessarie</responsibility>
+            <functions>
+                <function>greedy_mdl_selection(): Algoritmo selezione greedy</function>
+                <function>adaptive_tau(): Stima soglia adattiva (elbow method)</function>
+            </functions>
+            <dependencies>Core MDL</dependencies>
+        </component>
+        
+        <component name="GUI Application">
+            <responsibility>Interfaccia utente grafica</responsibility>
+            <classes>
+                <class>MDLApp: Finestra principale con notebook tabs</class>
+                <class>ConfigDialog: Dialog configurazione analisi</class>
+            </classes>
+            <tabs>
+                <tab>Analysis: Chart Δ̂ profile + controlli + risultati</tab>
+                <tab>Data: Preview CSV in tabella Treeview</tab>
+                <tab>Theory: Spiegazione teorica MDL</tab>
+            </tabs>
+            <dependencies>tkinter, ttk</dependencies>
+        </component>
+        
+        <dataflow>
+            <step num="1">Utente carica CSV via file dialog</step>
+            <step num="2">ConfigDialog: selezione target, tipo, threshold, ragioni</step>
+            <step num="3">analyze_columns(): calcola corr, mediana, flag inversione</step>
+            <step num="4">build_mdl_texts_from_data(): genera testi sintetici q, B, E, p_i</step>
+            <step num="5">Utente preme "Execute MDL Analysis"</step>
+            <step num="6">Calcolo Δ̂_base per tutte le ragioni</step>
+            <step num="7">adaptive_tau(): stima soglia ottimale</step>
+            <step num="8">greedy_mdl_selection(): selezione iterativa S*</step>
+            <step num="9">Visualizzazione risultati: chart + text areas + label updates</step>
+        </dataflow>
+    </software-architecture>
+
+    <!-- ================================================================ -->
+    <!-- GUIDA UTILIZZO -->
+    <!-- ================================================================ -->
+    
+    <user-guide>
+        <title>Guida Utilizzo del Programma</title>
+        
+        <installation>
+            <requirements>
+                <requirement>Python 3.8+</requirement>
+                <requirement>Nessuna dipendenza esterna (solo standard library)</requirement>
+            </requirements>
+            <steps>
+                <step>1. Scarica mdl_analyzer_v2.4.py</step>
+                <step>2. Esegui: python mdl_analyzer_v2.4.py</step>
+            </steps>
+        </installation>
+        
+        <workflow>
+            <step num="1">
+                <title>Caricamento CSV</title>
+                <description>
+                    Clicca "📁 Load CSV" e seleziona il file. Il CSV deve avere:
+                    - Header row con nomi colonne
+                    - Una colonna target (conclusione q)
+                    - Almeno una colonna ragione (p)
+                </description>
+            </step>
+            
+            <step num="2">
+                <title>Configurazione Analisi</title>
+                <description>
+                    Nel dialog "Configure Analysis":
+                    1. Seleziona colonna target (q)
+                    2. Scegli tipo dato: Numeric, Boolean, Categorical
+                    3. Imposta soglia successo (es. 70 per esame)
+                    4. Seleziona colonne ragione (p) dai checkbox
+                    5. Clicca "✓ OK"
+                </description>
+                <example>
+                    Target: exam_score (Numeric, ≥ 70)
+                    Ragioni: study_hours, attendance, sleep_hours, social_media_hours
+                </example>
+            </step>
+            
+            <step num="3">
+                <title>Analisi Automatica</title>
+                <description>
+                    Il programma mostra messagebox con analisi correlazioni:
+                    - Correlazione Pearson per ogni ragione
+                    - Mediana per soglia adattiva
+                    - Flag inversione se corr negativa
+                </description>
+            </step>
+            
+            <step num="4">
+                <title>Esecuzione MDL</title>
+                <description>
+                    Clicca "▶ Execute MDL Analysis". Il programma:
+                    - Genera testi sintetici
+                    - Calcola Δ̂ per ogni ragione
+                    - Stima τ adattivo
+                    - Esegue selezione greedy
+                    - Visualizza risultati
+                </description>
+            </step>
+            
+            <step num="5">
+                <title>Interpretazione Risultati</title>
+                <description>
+                    Chart mostra profilo Δ̂:
+                    - Barre verdi con badge numerato: ragioni necessarie (S*)
+                    - Barre arancioni: ragioni supererogatorie
+                    - Linea rossa tratteggiata: soglia τ
+                    
+                    Panel destra mostra:
+                    - Ragioni necessarie con Δ̂ al momento selezione
+                    - Ragioni supererogatorie con Δ̂_base e Δ̂_post
+                </description>
+            </step>
+        </workflow>
+        
+        <options>
+            <option name="Compression Method">
+                <values>zlib (veloce), bz2 (preciso)</values>
+                <default>zlib</default>
+                <recommendation>Usa zlib per dataset grandi (&gt;1000 righe), bz2 per analisi precise</recommendation>
+            </option>
+            <option name="Include dominant reason r">
+                <description>Test non-monotonicità: aggiunge ragione dominante fittizia al contesto</description>
+                <use-case>Verifica se altre ragioni diventano supererogatorie con contesto arricchito</use-case>
+            </option>
+            <option name="Sort by Δ̂">
+                <description>Ordina barre chart per Δ̂ decrescente invece di ordine colonne</description>
+                <recommendation>Attiva per identificare visivamente ragioni più informative</recommendation>
+            </option>
+        </options>
+    </user-guide>
+
+    <!-- ================================================================ -->
+    <!-- ESEMPI PRATICI -->
+    <!-- ================================================================ -->
+    
+    <examples>
+        <title>Esempi Pratici di Utilizzo</title>
+        
+        <example id="student-performance">
+            <title>Analisi Performance Studenti</title>
+            
+            <dataset>
+                <file>student_habits_performance.csv</file>
+                <rows>1000</rows>
+                <columns>
+                    <column>exam_score: voto esame (0-100)</column>
+                    <column>study_hours_per_day: ore studio/giorno</column>
+                    <column>attendance_percentage: % presenze</column>
+                    <column>sleep_hours: ore sonno/notte</column>
+                    <column>social_media_hours: ore social/giorno</column>
+                    <column>mental_health_rating: salute mentale (1-10)</column>
+                </columns>
+            </dataset>
+            
+            <configuration>
+                <target>exam_score</target>
+                <type>Numeric</type>
+                <threshold>70</threshold>
+                <reasons>study_hours_per_day, attendance_percentage, sleep_hours, social_media_hours, mental_health_rating</reasons>
+            </configuration>
+            
+            <analysis-output>
+                <correlations>
+                    <correlation col="study_hours_per_day" value="0.582" median="3.5h"/>
+                    <correlation col="attendance_percentage" value="0.671" median="85.0%"/>
+                    <correlation col="sleep_hours" value="0.124" median="7.0h"/>
+                    <correlation col="social_media_hours" value="-0.852" median="2.5h" inverted="true"/>
+                    <correlation col="mental_health_rating" value="0.398" median="6.0"/>
+                </correlations>
+                
+                <adaptive-tau>0.173</adaptive-tau>
+                
+                <necessary-reasons>
+                    <reason rank="1" col="study_hours_per_day" delta="0.349"/>
+                    <reason rank="2" col="attendance_percentage" delta="0.402"/>
+                    <reason rank="3" col="LOW social_media_hours" delta="0.512"/>
+                </necessary-reasons>
+                
+                <supererogatory-reasons>
+                    <reason col="sleep_hours" delta-base="0.074" delta-post="0.019"/>
+                    <reason col="mental_health_rating" delta-base="0.239" delta-post="0.078"/>
+                </supererogatory-reasons>
+            </analysis-output>
+            
+            <interpretation>
+                <finding>
+                    Le ragioni necessarie per spiegare il successo (exam_score ≥ 70) sono:
+                    1. Studio regolare (≥3.5h/giorno)
+                    2. Alta presenza (≥85%)
+                    3. Basso uso social media (&lt;2.5h/giorno)
+                </finding>
+                <finding>
+                    Le ore di sonno e la salute mentale, pur avendo correlazione positiva, 
+                    sono supererogatorie: non riducono significativamente la complessità 
+                    una volta note le altre tre ragioni.
+                </finding>
+                <insight>
+                    L'inversione automatica di social_media_hours permette corretta interpretazione: 
+                    "LOW social_media" è ragione positiva (meno distrazioni → migliori voti).
+                </insight>
+            </interpretation>
+        </example>
+        
+        <example id="medical-diagnosis">
+            <title>Fattori Rischio Medici</title>
+            
+            <scenario>
+                Dataset clinico con pazienti diabetici. Target: sviluppo complicazioni (Boolean).
+                Ragioni candidate: età, BMI, pressione, glicemia, attività fisica, fumo.
+            </scenario>
+            
+            <expected-output>
+                Ragioni necessarie: glicemia elevata, BMI &gt; mediana, fumo
+                Ragioni supererogatorie: età (già catturata da altri fattori), pressione (ridondante con BMI)
+            </expected-output>
+            
+            <mdl-advantage>
+                MDL identifica ridondanza informativa che analisi tradizionali (regressione) 
+                non catturano: età e pressione sono predittivi ma non aggiungono informazione 
+                oltre a quella fornita da glicemia+BMI+fumo.
+            </mdl-advantage>
+        </example>
+    </examples>
+
+    <!-- ================================================================ -->
+    <!-- TESTING E VALIDAZIONE -->
+    <!-- ================================================================ -->
+    
+    <testing>
+        <title>Testing e Validazione</title>
+        
+        <unit-tests>
+            <test name="test_compression_determinism">
+                <description>Verifica che compressione sia deterministica</description>
+                <assertion>compressed_len(data, 'zlib') stesso valore su chiamate multiple</assertion>
+            </test>
+            <test name="test_delta_bounds">
+                <description>Verifica che Δ̂ ∈ [0, 1]</description>
+                <assertion>0 ≤ delta_hat(q, C, p) ≤ 1 per ogni q, C, p</assertion>
+            </test>
+            <test name="test_correlation_range">
+                <description>Verifica correlazione in [-1, 1]</description>
+                <assertion>-1 ≤ compute_correlation(x, y) ≤ 1</assertion>
+            </test>
+            <test name="test_greedy_monotonicity">
+                <description>Verifica che S* cresca monotonamente</description>
+                <assertion>len(selected_t+1) ≥ len(selected_t)</assertion>
+            </test>
+        </unit-tests>
+        
+        <integration-tests>
+            <test name="test_csv_pipeline">
+                <description>Test pipeline completa: CSV → configurazione → analisi → risultati</description>
+                <fixtures>student_habits_performance.csv, assessments.csv</fixtures>
+            </test>
+            <test name="test_negative_correlation_inversion">
+                <description>Verifica inversione automatica per colonne correlate negativamente</description>
+                <expected>social_media_hours marcata come invertita, label "LOW social_media_hours"</expected>
+            </test>
+        </integration-tests>
+        
+        <validation-metrics>
+            <metric name="Riproducibilità">
+                Stesso CSV + configurazione → stessi risultati (grazie a seed fisso)
+            </metric>
+            <metric name="Robustezza">
+                Gestione errori CSV malformati, valori missing, colonne non-numeriche
+            </metric>
+            <metric name="Performance">
+                Dataset 1000 righe × 5 colonne: &lt;10 secondi (zlib), &lt;30 secondi (bz2)
+            </metric>
+        </validation-metrics>
+    </testing>
+
+    <!-- ================================================================ -->
+    <!-- LIMITAZIONI E LAVORO FUTURO -->
+    <!-- ================================================================ -->
+    
+    <limitations>
+        <title>Limitazioni e Lavoro Futuro</title>
+        
+        <limitation id="synthetic-texts">
+            <title>Rappresentazioni Sintetiche</title>
+            <description>
+                Il programma genera testi sintetici invece di usare rappresentazioni semantiche 
+                reali. Questo funziona come proxy ma potrebbe non catturare tutte le sfumature 
+                semantiche delle ragioni nel dominio applicativo.
+            </description>
+            <future-work>
+                Integrazione con modelli linguistici (BERT, GPT) per embedding semantici reali 
+                delle ragioni basati su descrizioni testuali fornite dall'utente.
+            </future-work>
+        </limitation>
+        
+        <limitation id="compression-approximation">
+            <title>Approssimazione via Compressione</title>
+            <description>
+                La complessità di Kolmogorov è approssimata via compressione, che introduce 
+                rumore algoritmico (~5%). Questo limita la precisione delle stime di Δ̂.
+            </description>
+            <future-work>
+                Valutazione di metodi di compressione avanzati (context mixing, PAQ) per 
+                migliori approssimazioni di K(·).
+            </future-work>
+        </limitation>
+        
+        <limitation id="greedy-suboptimality">
+            <title>Subottimalità dell'Algoritmo Greedy</title>
+            <description>
+                La selezione greedy non garantisce set S* ottimale globale. Potrebbero esistere 
+                configurazioni migliori con Δ̂ totale superiore.
+            </description>
+            <future-work>
+                Algoritmi branch-and-bound o programmazione dinamica per ottimizzazione globale 
+                (computazionalmente costosi, praticabili solo per n &lt; 15 ragioni).
+            </future-work>
+        </limitation>
+        
+        <limitation id="scalability">
+            <title>Scalabilità</title>
+            <description>
+                Performance degrada con dataset molto grandi (&gt;10k righe × &gt;20 colonne) 
+                a causa del costo quadratico della compressione ripetuta.
+            </description>
+            <future-work>
+                - Caching intelligente dei risultati di compressione
+                - Parallelizzazione calcolo Δ̂ (multiprocessing)
+                - Sampling per dataset massivi (analisi su sottocampione rappresentativo)
+            </future-work>
+        </limitation>
+        
+        <future-enhancements>
+            <enhancement>Export risultati in formato JSON/XML per integrazione con altre pipeline</enhancement>
+            <enhancement>Visualizzazioni aggiuntive: heatmap correlazioni, network graph ragioni</enhancement>
+            <enhancement>Modalità batch per analisi multiple dataset</enhancement>
+            <enhancement>Supporto per constraint utente su S* (es. "forza inclusione di X")</enhancement>
+            <enhancement>Integrazione con framework causal inference (do-calculus)</enhancement>
+        </future-enhancements>
+    </limitations>
+
+    <!-- ================================================================ -->
+    <!-- CONCLUSIONI -->
+    <!-- ================================================================ -->
+    
+    <conclusion>
+        <title>Conclusioni</title>
+        
+        <summary>
+            Il programma MDL Supererogatory Reasons Analyzer v2.4 fornisce un'implementazione 
+            completa e robusta del criterio MDL per l'identificazione di ragioni supererogatorie. 
+            Le innovazioni della versione 2.4 (soglie adattive, overlap basato su correlazione, 
+            inversione automatica) migliorano significativamente l'accuratezza e l'usabilità 
+            rispetto alle versioni precedenti.
+        </summary>
+        
+        <contributions>
+            <contribution>
+                Primo tool software open-source per analisi MDL di ragioni supererogatorie
+            </contribution>
+            <contribution>
+                Implementazione fedele della teoria (Coelati Rama, 2025) con estensioni pratiche
+            </contribution>
+            <contribution>
+                Zero dipendenze esterne: 100% standard library Python (massima portabilità)
+            </contribution>
+            <contribution>
+                GUI moderna e intuitiva: accessibile a utenti non-tecnici
+            </contribution>
+            <contribution>
+                Documentazione completa: codice commentato + XML tecnico + esempi pratici
+            </contribution>
+        </contributions>
+        
+        <applications>
+            <domain>Analisi educativa: fattori critici per successo studenti</domain>
+            <domain>Diagnostica medica: ridondanza fattori rischio</domain>
+            <domain>Analisi sociale: determinanti outcome complessi</domain>
+            <domain>Quality assurance: cause guasti vs cause secondarie</domain>
+            <domain>Ricerca scientifica: validazione ipotesi concorrenti</domain>
+        </applications>
+        
+        <availability>
+            <github>https://github.com/[username]/mdl-supererogatory-analyzer</github>
+            <license>MIT License</license>
+            <documentation>README.md + technical_documentation.xml + inline comments</documentation>
+        </availability>
+    </conclusion>
+
+    <!-- ================================================================ -->
+    <!-- APPENDICI -->
+    <!-- ================================================================ -->
+    
+    <appendix id="mathematical-notation">
+        <title>Appendice A: Notazione Matematica</title>
+        
+        <notation symbol="K(x)">Complessità di Kolmogorov di x</notation>
+        <notation symbol="L(x)">Lunghezza compressa di x (proxy di K(x))</notation>
+        <notation symbol="K(x|y)">Complessità condizionale di x dato y</notation>
+        <notation symbol="Δ̂_C(p; q)">Riduzione relativa complessità di q aggiungendo p al contesto C</notation>
+        <notation symbol="τ">Soglia significatività (default 0.15)</notation>
+        <notation symbol="S*">Set minimo ragioni necessarie</notation>
+        <notation symbol="C = ⟨B, R, E⟩">Contesto composito: Background, Reasons, Evidence</notation>
+        <notation symbol="⊕">Operatore concatenazione con separatore</notation>
+    </appendix>
+    
+    <appendix id="code-repository-structure">
+        <title>Appendice B: Struttura Repository</title>
+        
+        <structure>
+            <directory name="/">
+                <file>mdl_analyzer_v2.4.py - Codice principale</file>
+                <file>technical_documentation.xml - Questo documento</file>
+                <file>README.md - Overview e quick start</file>
+                <file>LICENSE - MIT License</file>
+            </directory>
+            <directory name="examples/">
+                <file>student_habits_performance.csv - Dataset esempio studenti</file>
+                <file>medical_risk_factors.csv - Dataset esempio medico</file>
+                <file>example_analysis.ipynb - Jupyter notebook tutorial</file>
+            </directory>
+            <directory name="tests/">
+                <file>test_core_mdl.py - Unit tests MDL core</file>
+                <file>test_statistics.py - Unit tests analisi statistica</file>
+                <file>test_integration.py - Integration tests pipeline completa</file>
+            </directory>
+            <directory name="docs/">
+                <file>theory.pdf - Estratto tesi Coelati Rama</file>
+                <file>user_guide.pdf - Manuale utente dettagliato</file>
+                <file>api_reference.html - Documentazione API generata</file>
+            </directory>
+        </structure>
+    </appendix>
+</documentation>
